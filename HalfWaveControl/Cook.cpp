@@ -10,7 +10,7 @@
 /* ------------------------------------------------------------------------
  *  Constructor
  */
-Cook::Cook(int burner, double temp = DefaultGoalTemp, long timeInSecs = DefaultGoalTime) {
+Cook::Cook(int burner, int alarm, double temp = DefaultGoalTemp, long timeInSecs = DefaultGoalTime) {
   goalTemp = temp;
   currentTemp = 0;
   slope = 0;
@@ -22,7 +22,12 @@ Cook::Cook(int burner, double temp = DefaultGoalTemp, long timeInSecs = DefaultG
   // start with the burner off
   burnerStatus = LOW;
   digitalWrite(burnerPin, burnerStatus);
-
+  
+  alarmPin = alarm;
+  pinMode(alarmPin, OUTPUT);
+  digitalWrite(alarmPin, LOW);
+  alarmMessage = "";
+  
   // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
   oneWire = new OneWire(ONE_WIRE);
   // Pass our oneWire pointer to Dallas Temperature. 
@@ -32,6 +37,8 @@ Cook::Cook(int burner, double temp = DefaultGoalTemp, long timeInSecs = DefaultG
   sensors->setResolution(tempSensor, 12);
   sensors->setWaitForConversion(false);
   sensors->requestTemperatures(); // Start an asynchronous temperature reading
+
+  randomSeed(52); 
 }
 
 
@@ -47,7 +54,7 @@ void Cook::refresh() {
 
   // the 1st iteration ends immediately
   if( prevTemp == 0 ) {
-    Serial.println("Cook: 1st iteracion, fin aca.");
+    Serial.println("Cook: 1st loop, ends here.");
     return;
   }
   
@@ -61,8 +68,8 @@ void Cook::refresh() {
     // keep the old temperature, and keep slope
     currentTemp = prevTemp;
   }
-  Serial.print("Cook: slope = ");
-  Serial.println(slope);
+  //Serial.print("Cook: slope = ");
+  //Serial.println(slope);
 
   // Reach the crest of the wave?
   if( prevSlope > 0 && slope <= 0 ) {
@@ -93,8 +100,12 @@ void Cook::refresh() {
     digitalWrite(burnerPin, burnerStatus);
   }
   
-  Serial.print("Cook: brunerStatus = ");
-  Serial.println(burnerStatus);
+  //Serial.print("Cook: brunerStatus = ");
+  //Serial.println(burnerStatus);
+
+  if( random(1,1000) == 5 ) {
+    setAlarm("Zaraza");
+  }
 }
 
 
@@ -113,7 +124,29 @@ void Cook::adjustGoalTime( int hours, int minutes = 0 ) {
   goalTimeInSeconds += ( ( hours * 60 ) + minutes ) * 60;
 }
 
+/* ------------------------------------------------------------------------
+ *  Alarm
+ */
 
+void Cook::setAlarm(String msg) {
+  alarmMessage = msg;
+  digitalWrite(alarmPin, HIGH);
+}
+
+bool Cook::alarm() {
+  return alarmMessage.length() > 0;
+}
+
+String Cook::getAlarmMessage() {
+  return alarmMessage;
+}
+
+void Cook::turnOffAlarm() {
+  alarmMessage = "";
+  digitalWrite(alarmPin, LOW);
+}
+
+    
 /* ------------------------------------------------------------------------
  *  Proyectors
  */

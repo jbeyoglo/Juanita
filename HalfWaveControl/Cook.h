@@ -12,6 +12,9 @@ class Cook {
     OneWire *oneWire;
     DallasTemperature *sensors;
     DeviceAddress tempSensor;
+    
+    int alarmPin;
+    String alarmMessage;
 
     double goalTemp;
     double currentTemp;
@@ -23,13 +26,13 @@ class Cook {
     int slope;
 
     long goalTimeInSeconds;
-    long currentTimeInSeconds;
+    long currentTimeInSeconds;    
     
   public:
     static const double DefaultGoalTemp = 92.0;
     static const long   DefaultGoalTime = 6 * 60 * 60;  // 6 hours
     
-    Cook(int burner, double cookTemp = DefaultGoalTemp, long timeInSecs = DefaultGoalTime);
+    Cook(int burner, int alarm, double cookTemp = DefaultGoalTemp, long timeInSecs = DefaultGoalTime);
 
     void refresh();
 
@@ -41,6 +44,11 @@ class Cook {
     double getCurrentTemp();
     long getGoalTimeInSecs();
     long getCurrentTimeInSecs();
+
+    void setAlarm(String msg);
+    bool alarm();
+    String getAlarmMessage();
+    void turnOffAlarm();
 };
 
 #endif  // COOK_h

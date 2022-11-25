@@ -1,5 +1,7 @@
 /********************************************************
    Half Wave Control
+
+   Github: https://github.com/jbeyoglo/Juanita
    
    The idea is to cut off power to the burner as soon as 
    it reaches the target temperature. 
@@ -9,7 +11,7 @@
    the higher point and the target temperature.
    
    https://photos.app.goo.gl/ZZD51qur71izphSH9
-   
+      
  ********************************************************/
 
 #include <LiquidCrystal_I2C.h>
@@ -18,17 +20,25 @@
 const int RelayPin = A6;
 const int AlarmPin = A2;
 
-const int EncoderSwitch = D12;
-const int EncoderS1 = D2;
-const int EncoderS2 = D3;
-
 const int buttonUp = D4;
 const int buttonDown = D7;    
 const int buttonLeft = D8;    
 const int buttonRight = D5;    
 const int buttonShift = D6;   
 
-Cook *cocinero;
+const int EncoderSwitch = D12;
+const int EncoderS1 = D2;
+const int EncoderS2 = D3;
+
+int pinAstateCurrent = LOW;                // Current state of Pin A
+int pinAStateLast = pinAstateCurrent;      // Last read value of Pin A
+int motorPower = 0;
+int prevMotorPower = 0;
+const int MaxMotorPower = 20;
+long timeEncoderSwitchded = 0;
+
+
+Cook *cook;
 
 // set the LCD address to 0x27 for a 20 chars and 4 line display
 LiquidCrystal_I2C lcd(0x27,20,4);  
@@ -85,9 +95,9 @@ void setup() {
   pinMode (EncoderS1, INPUT); 
   pinMode (EncoderS2, INPUT); 
   // Atach a CHANGE interrupt to PinB and exectute the update function when this change occurs.
-  attachInterrupt(digitalPinToInterrupt(EncoderS2), update, CHANGE);
-  cocinero = new Cook(RelayPin);
-  Serial.println("Cocinero creado.");
+  attachInterrupt(digitalPinToInterrupt(EncoderS2), updateEncoder, CHANGE);
+  cook = new Cook(RelayPin, AlarmPin);
+  Serial.println("Cook created");
 
   // Initialize LCD DiSplay 
   lcd.init();
@@ -101,37 +111,17 @@ void setup() {
   delay(1000);
 }
 
-int pinAstateCurrent = LOW;                // Current state of Pin A
-int pinAStateLast = pinAstateCurrent;      // Last read value of Pin A
-
 /* ------------------------------------------------------------------------
  *  Loop
  */
 void loop() {
-  cocinero->refresh();  
-  lcdRefresh(lcd, *cocinero);
+  cook->refresh();  
+  lcdRefresh(lcd, *cook);
 
-  adjustBasedOnButtons( *cocinero );
+  adjustBasedOnButtons( *cook );
   
   delay(200);
 
-  if( digitalRead(EncoderSwitch) == LOW ) {
-    Serial.println("SWITCH ON!!");
-  }
-
-/*
-  // ROTATION DIRECTION
-  pinAstateCurrent = digitalRead(EncoderS1);    // Read the current state of Pin A
-  // If there is a minimal movement of 1 step
-  if ((pinAStateLast == LOW) && (pinAstateCurrent == HIGH)) {    
-    if (digitalRead(EncoderS2) == HIGH) {      // If Pin B is HIGH
-      Serial.println("Left");             // Print on screen
-    } else {
-      Serial.println("Right");            // Print on screen
-    }
-  }
-  pinAStateLast = pinAstateCurrent;        // Store the latest read value in the currect state variable
-  */
   
   /*
   digitalWrite(AlarmPin, HIGH);
@@ -140,30 +130,28 @@ void loop() {
   */
 }
 
-void update() {
-
-  /* WARNING: For this example I've used Serial.println within the interrupt callback. The Serial 
-   * library already uses interrupts which could cause errors. Therefore do not use functions 
-   * of the Serial libray in your interrupt callback.
-   */
-
+/* ------------------------------------------------------------------------
+ *  updateEncoder
+ */
+void updateEncoder() {
   // ROTATION DIRECTION
   pinAstateCurrent = digitalRead(EncoderS1);    // Read the current state of Pin A
   
   // If there is a minimal movement of 1 step
-  if ((pinAStateLast == LOW) && (pinAstateCurrent == HIGH)) {
+  if ((pinAStateLast == LOW) && (pinAstateCurrent == HIGH) 
+                             && outsideReboundTimeframe(timeEncoderSwitchded)) {
     
     if (digitalRead(EncoderS2) == HIGH) {      // If Pin B is HIGH
+      motorPower += ( motorPower < MaxMotorPower ? 1 : 0 );
       Serial.println("Right");             // Print on screen
     } else {
+      motorPower -= ( motorPower > -1 * MaxMotorPower ? 1 : 0 );
       Serial.println("Left");            // Print on screen
-    }
-    
-  }
-  
+    }    
+  }  
   pinAStateLast = pinAstateCurrent;        // Store the latest read value in the currect state variable
-  
 }
+
 
 /* ------------------------------------------------------------------------
  *  LCD
@@ -190,12 +178,31 @@ void lcdRefresh(LiquidCrystal_I2C &lcd, Cook &cook) {
       lcd.print("-");
   }
 
+  // line 2: Mix power and direction
+  if( motorPower == 0 ) {
+    sprintf(floatBuffer, " Off ");
+  } else {
+    sprintf(floatBuffer, "%3d%% ", (100 * abs(motorPower) / MaxMotorPower) );
+  }  
+  sprintf(printBuffer,"Mix:  %s %s %s" 
+      , (motorPower <= 0 ? "<==" : "   ") 
+      , floatBuffer
+      , (motorPower >= 0 ? "==>" : "   ") );
+  lcd.setCursor(0,1);  
+  lcd.print(printBuffer);
+  
+  // line 3: alarms
   lcd.setCursor(0,2);
   for( int i=0; i<20; i++) {
     lcd.setCursor(i,2);
     lcd.print("-");    
   }
+  if( cook.alarm() ) {
+    lcd.setCursor(3,2);
+    lcd.print( " " + cook.getAlarmMessage().substring(0,14) + " ");
+  }
   
+  // line 4: setup
   dtostrf( cook.getGoalTemp(), 5, 1, floatBuffer);
   sprintf(printBuffer, "Goal:%s C ~ %s", floatBuffer, convertSecondsToHHMM(cook.getGoalTimeInSecs(),timeBuffer) );
   lcd.setCursor(0,3);  
@@ -218,19 +225,23 @@ char* convertSecondsToHHMM( long seconds, char *buffer  ) {
 void adjustBasedOnButtons( Cook &cook) {
 
   int shiftState = digitalRead(buttonShift);
-
+  bool otherButton = false;
+  
   int buttonState = digitalRead(buttonUp);
   if (buttonState == HIGH) {
+    otherButton = true;
     cook.adjustGoalTemp( (shiftState==HIGH ? 1.0 : 0.1) );
   } 
 
   buttonState = digitalRead(buttonDown);
   if (buttonState == HIGH) {
+    otherButton = true;
     cook.adjustGoalTemp( (shiftState==HIGH ? -1.0 : -0.1) );
   } 
 
   buttonState = digitalRead(buttonRight);
   if (buttonState == HIGH) {
+    otherButton = true;
     if( shiftState==HIGH ) {
       cook.adjustGoalTime(1);      
     } else {
@@ -240,10 +251,40 @@ void adjustBasedOnButtons( Cook &cook) {
 
   buttonState = digitalRead(buttonLeft);
   if (buttonState == HIGH) {
+    otherButton = true;
     if( shiftState==HIGH ) {
       cook.adjustGoalTime(-11);      
     } else {
       cook.adjustGoalTime(0,-1);      
     }
   } 
+
+  if( shiftState==HIGH && !otherButton ) {
+    cook.turnOffAlarm();
+  }
+
+  if( digitalRead(EncoderSwitch) == LOW && outsideReboundTimeframe(timeEncoderSwitchded) ) {    
+    Serial.println("SWITCH ON!!");
+    //char printBuffer[80];    
+    //sprintf(printBuffer, "SWITCH ON == motor: %d - prev: %d", motorPower, prevMotorPower);
+    //Serial.println(printBuffer);
+    
+    timeEncoderSwitchded = millis();
+    // resume?
+    if( motorPower == 0 && prevMotorPower != 0 ) {
+      motorPower = prevMotorPower;
+      prevMotorPower = 0;      
+    } else {
+      prevMotorPower = motorPower;
+      motorPower = 0;
+    }
+  }
+  
+}
+
+/* ------------------------------------------------------------------------
+ *  didPassMoreThanASecondSince
+ */
+bool outsideReboundTimeframe( long prevMillis ) {
+  return ( prevMillis < (millis() - 1000) );
 }
