@@ -37,6 +37,9 @@ int prevMotorPower = 0;
 const int MaxMotorPower = 20;
 long timeEncoderSwitchded = 0;
 
+const int MotorPWM1 = D9;
+const int MotorPWM2 = D10;
+
 
 Cook *cook;
 
@@ -94,6 +97,8 @@ void setup() {
   pinMode (EncoderSwitch, INPUT_PULLUP); 
   pinMode (EncoderS1, INPUT); 
   pinMode (EncoderS2, INPUT); 
+  pinMode(MotorPWM1, OUTPUT);
+  pinMode(MotorPWM2, OUTPUT);
   // Atach a CHANGE interrupt to PinB and exectute the update function when this change occurs.
   attachInterrupt(digitalPinToInterrupt(EncoderS2), updateEncoder, CHANGE);
   cook = new Cook(RelayPin, AlarmPin);
@@ -104,7 +109,7 @@ void setup() {
   lcd.clear();
   lcd.backlight();
   lcd.setCursor(2,2);
-  lcd.print("La Juanita v2.1");
+  lcd.print("La Juanita v2.2");
   lcd.createChar (1, deg_sign);
   lcd.createChar (2, up_sign);
   lcd.createChar (3, down_sign);
@@ -278,6 +283,21 @@ void adjustBasedOnButtons( Cook &cook) {
       prevMotorPower = motorPower;
       motorPower = 0;
     }
+  }
+
+  // bridgeH that moves the mixing motor, 2 x pwm signals
+  int map0to255 = 0;
+  if( motorPower == 0 || motorPower > MaxMotorPower || motorPower < -1 * MaxMotorPower ) {
+    analogWrite( MotorPWM1, 0 );
+    analogWrite( MotorPWM2, 0 );
+  } else if( motorPower > 0 ) {
+    analogWrite( MotorPWM1, 0 );
+    map0to255 = map( motorPower, 0, MaxMotorPower, 0, 255 );
+    analogWrite( MotorPWM2, map0to255 );
+  } else {
+    analogWrite( MotorPWM2, 0 );
+    map0to255 = map( motorPower, 0, -1 * MaxMotorPower, 0, 255 );
+    analogWrite( MotorPWM1, map0to255 );    
   }
   
 }
