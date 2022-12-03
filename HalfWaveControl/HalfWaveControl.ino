@@ -109,7 +109,7 @@ void setup() {
   lcd.clear();
   lcd.backlight();
   lcd.setCursor(2,2);
-  lcd.print("La Juanita v2.2");
+  lcd.print("La Juanita v2.22");
   lcd.createChar (1, deg_sign);
   lcd.createChar (2, up_sign);
   lcd.createChar (3, down_sign);

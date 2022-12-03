@@ -38,7 +38,7 @@ Cook::Cook(int burner, int alarm, double temp = DefaultGoalTemp, long timeInSecs
   sensors->setWaitForConversion(false);
   sensors->requestTemperatures(); // Start an asynchronous temperature reading
 
-  randomSeed(52); 
+  kalmanFilter = new SimpleKalmanFilter( 1, 1, 0.1);
 }
 
 
@@ -48,8 +48,17 @@ Cook::Cook(int burner, int alarm, double temp = DefaultGoalTemp, long timeInSecs
 void Cook::refresh() {
   const double minDelta = 0.1;
   double prevTemp = currentTemp;
-  
-  currentTemp = sensors->getTempC(tempSensor);
+
+  double tmp = sensors->getTempC(tempSensor);
+  //currentTemp = sensors->getTempC(tempSensor);
+  currentTemp = kalmanFilter->updateEstimate(tmp);
+  /*
+  Serial.print("Temp: ");
+  Serial.print( tmp );
+  Serial.print(" -> ");
+  Serial.print( currentTemp );
+  Serial.println();
+  */  
   sensors->requestTemperatures(); // prime the pump for the next one - but don't wait
 
   // the 1st iteration ends immediately
@@ -99,13 +108,8 @@ void Cook::refresh() {
     burnerStatus = newBurnerStatus;
     digitalWrite(burnerPin, burnerStatus);
   }
-  
   //Serial.print("Cook: brunerStatus = ");
   //Serial.println(burnerStatus);
-
-  if( random(1,1000) == 5 ) {
-    setAlarm("Zaraza");
-  }
 }
 
 

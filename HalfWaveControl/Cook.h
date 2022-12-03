@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <DallasTemperature.h>
+#include <SimpleKalmanFilter.h>
 
 
 class Cook {
@@ -12,6 +13,7 @@ class Cook {
     OneWire *oneWire;
     DallasTemperature *sensors;
     DeviceAddress tempSensor;
+    SimpleKalmanFilter *kalmanFilter;
     
     int alarmPin;
     String alarmMessage;
